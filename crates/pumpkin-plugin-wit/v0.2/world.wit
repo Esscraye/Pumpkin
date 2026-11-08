@@ -649,6 +649,25 @@ interface %world {
         hit-pos: position,
     }
 
+    /// Block states of one 16x16x16 section of a saved chunk.
+    record saved-chunk-section {
+        /// Block state IDs used in this section.
+        palette: list<u16>,
+        /// Index into `palette` for each block, in YZX order (index = (y * 16 + z) * 16 + x).
+        /// Empty when the palette has a single entry.
+        indices: list<u16>,
+    }
+
+    /// Block states of a chunk as it was last saved.
+    record saved-chunk {
+        x: s32,
+        z: s32,
+        /// Y coordinate of the bottom of the first section.
+        min-y: s32,
+        /// Sections from bottom to top, 16 blocks tall each.
+        sections: list<saved-chunk-section>,
+    }
+
     /// Result of an entity ray-trace operation.
     record ray-trace-entity-result {
         /// The entity that was hit.
@@ -980,6 +999,14 @@ interface %world {
 
         /// Saves all chunk data, block entities, and entities for this world to disk.
         save: async func() -> result<_, string>;
+
+        /// Lists the regions (32x32 chunks) of this world that have a saved region file.
+        /// Requires the `world.read.saved` permission.
+        list-saved-regions: async func() -> result<list<tuple<s32, s32>>, string>;
+
+        /// Reads the block states of a chunk as it was last saved, without loading it.
+        /// Returns none if the chunk was never saved. Requires the `world.read.saved` permission.
+        read-saved-chunk: async func(x: s32, z: s32) -> result<option<saved-chunk>, string>;
 
         /// Sets a custom chunk generator for this world using a registered generator ID.
         set-chunk-generator: func(generator-id: u32);

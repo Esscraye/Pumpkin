@@ -46,6 +46,9 @@ pub const FS_READ_DATA: &str = "fs.read.data";
 /// Note that this permission also implies `FS_READ_DATA`
 pub const FS_WRITE_DATA: &str = "fs.write.data";
 
+/// Allows the plugin to read saved chunks of any world without loading them (v0.2 world API).
+pub const WORLD_READ_SAVED: &str = "world.read.saved";
+
 /// Allows the plugin to read all environment variables.
 pub const SYS_ENV: &str = "sys.env";
 
@@ -97,6 +100,9 @@ pub fn get_permission_description(permission: &str) -> Option<&'static str> {
         FS_WRITE_DATA => Some(
             "Allows the plugin to write (and read) files within its own data folder. Implies `fs.read.data`.",
         ),
+        WORLD_READ_SAVED => {
+            Some("Allows the plugin to read saved chunks of any world without loading them.")
+        }
         SYS_ENV => Some("Allows the plugin to read all environment variables."),
         SYS_INFO => Some("Allows the plugin to read system information (CPU, Memory, OS)."),
         SYS_INFO_CPU => Some("Allows the plugin to read CPU information."),

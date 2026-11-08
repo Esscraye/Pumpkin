@@ -56,6 +56,8 @@ bindgen!({
         "pumpkin:plugin/world@0.2.0.[method]mob.clear-ai-goals": async | store | trappable,
         "pumpkin:plugin/world@0.2.0.[method]world.create-explosion": async | store | trappable,
         "pumpkin:plugin/world@0.2.0.[method]world.save": async | store | trappable,
+        "pumpkin:plugin/world@0.2.0.[method]world.list-saved-regions": async | store | trappable,
+        "pumpkin:plugin/world@0.2.0.[method]world.read-saved-chunk": async | store | trappable,
         "pumpkin:plugin/world@0.2.0.[method]world.set-block": async | store | trappable,
         "pumpkin:plugin/world@0.2.0.[method]world.set-block-by-id": async | store | trappable,
         "pumpkin:plugin/world@0.2.0.[method]world.set-block-by-name": async | store | trappable,

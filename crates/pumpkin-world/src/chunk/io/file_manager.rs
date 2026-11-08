@@ -517,10 +517,52 @@ where
     }
 }
 
+/// Parses a region file name like `r.-1.2.mca`, accepting only the format of `R`.
+fn parse_region_file_name<R: RegionFile>(name: &str) -> Option<Vector2<i32>> {
+    let mut parts = name.strip_prefix("r.")?.splitn(3, '.');
+    let x = parts.next()?.parse().ok()?;
+    let z = parts.next()?.parse().ok()?;
+    let region = Vector2::new(x, z);
+    (R::file_name(region) == name).then_some(region)
+}
+
+fn list_region_files<R: RegionFile>(dir: &std::path::Path) -> std::io::Result<Vec<Vector2<i32>>> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(err),
+    };
+    let mut regions = Vec::new();
+    for entry in entries {
+        if let Some(region) = entry?
+            .file_name()
+            .to_str()
+            .and_then(parse_region_file_name::<R>)
+        {
+            regions.push(region);
+        }
+    }
+    Ok(regions)
+}
+
 pub enum LevelFileIO<D> {
     Linear(ChunkFileManager<LinearV2File, D>),
     Anvil(ChunkFileManager<AnvilRegion, D>),
     Pump(ChunkFileManager<PumpFile, D>),
+}
+
+impl<D> LevelFileIO<D> {
+    /// Lists the regions that have a region file of this format in `dir`.
+    pub async fn saved_regions(&self, dir: PathBuf) -> std::io::Result<Vec<Vector2<i32>>> {
+        let list = match self {
+            Self::Linear(_) => list_region_files::<LinearV2File>,
+            Self::Anvil(_) => list_region_files::<AnvilRegion>,
+            Self::Pump(_) => list_region_files::<PumpFile>,
+        };
+        run_blocking(move || list(&dir))
+            .await
+            .unwrap_or_else(|err| Err(std::io::Error::other(err)))
+    }
 }
 
 impl<D> FileIO for LevelFileIO<D>
@@ -640,6 +682,21 @@ mod tests {
         fn position(&self) -> (i32, i32) {
             self.chunk.position()
         }
+    }
+
+    #[test]
+    fn region_file_names_parse_only_for_their_format() {
+        assert_eq!(
+            parse_region_file_name::<AnvilRegion>("r.-1.2.mca"),
+            Some(Vector2::new(-1, 2))
+        );
+        assert_eq!(parse_region_file_name::<AnvilRegion>("r.-1.2.linear"), None);
+        assert_eq!(parse_region_file_name::<AnvilRegion>("r.1.2.mca.tmp"), None);
+        assert_eq!(parse_region_file_name::<AnvilRegion>("r.a.2.mca"), None);
+        assert_eq!(
+            parse_region_file_name::<PumpFile>("r.0.0.pump"),
+            Some(Vector2::new(0, 0))
+        );
     }
 
     #[tokio::test]

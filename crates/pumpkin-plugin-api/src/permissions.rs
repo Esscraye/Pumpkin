@@ -42,6 +42,9 @@ pub const FS_READ_DATA: &str = "fs.read.data";
 /// Note that this permission also implies `FS_READ_DATA`
 pub const FS_WRITE_DATA: &str = "fs.write.data";
 
+/// Allows the plugin to read saved chunks of any world without loading them (v0.2 world API).
+pub const WORLD_READ_SAVED: &str = "world.read.saved";
+
 /// Allows the plugin to read all environment variables.
 pub const SYS_ENV: &str = "sys.env";
 

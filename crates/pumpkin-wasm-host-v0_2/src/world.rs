@@ -21,7 +21,8 @@ use crate::pumpkin::plugin::world::{
     BlockStateInfo as WitBlockStateInfo, BoundingBox as WitBoundingBox, Chunk as WitChunk,
     Flammable as WitFlammable, NoteblockInstrument as WitNoteblockInstrument,
     PistonBehavior as WitPistonBehavior, RayTraceBlockResult as WitRayTraceBlockResult,
-    RayTraceEntityResult as WitRayTraceEntityResult, WorldBorder as WitWorldBorder,
+    RayTraceEntityResult as WitRayTraceEntityResult, SavedChunk as WitSavedChunk,
+    SavedChunkSection as WitSavedChunkSection, WorldBorder as WitWorldBorder,
     WorldSpawnLocation as WitWorldSpawnLocation,
 };
 use crate::pumpkin::{self, plugin::world::World};
@@ -76,10 +77,12 @@ use pumpkin_core::block::entities::test_instance_block::TestInstanceBlockBlockEn
 use pumpkin_core::block::entities::trapped_chest::TrappedChestBlockEntity as InternalTrappedChestBlockEntity;
 use pumpkin_core::block::entities::trial_spawner::TrialSpawnerBlockEntity as InternalTrialSpawnerBlockEntity;
 use pumpkin_core::block::entities::vault::VaultBlockEntity as InternalVaultBlockEntity;
+use pumpkin_core::plugin::permissions;
 use pumpkin_core::world::explosion::ExplosionInteraction;
 use pumpkin_data::game_rules::{GameRule, GameRuleValue};
 use pumpkin_wasm_host_common::state::ChunkBuffer;
 use pumpkin_wasm_host_common::state::PluginHostState;
+use pumpkin_world::chunk::palette::{BlockPalette, PalettedContainer};
 
 pub(crate) fn from_wit_game_rule(rule: WitGameRule) -> GameRule {
     // SAFETY: WIT GameRule and pumpkin_data::game_rules::GameRule have identical variant order
@@ -150,6 +153,62 @@ fn loaded_chunk_data(
     chunk_data
         .upgrade()
         .ok_or_else(|| wasmtime::Error::msg("Chunk unloaded"))
+}
+
+/// Returns the world behind `world` if the plugin has the `world.read.saved` permission.
+fn saved_world_access(
+    accessor: &Accessor<PluginHostState, HasSelf<PluginHostState>>,
+    world: &Resource<World>,
+) -> wasmtime::Result<Result<Arc<pumpkin_core::world::World>, String>> {
+    accessor.with(|mut host| {
+        let state = host.get();
+        if !state
+            .permissions
+            .iter()
+            .any(|perm| perm == permissions::WORLD_READ_SAVED)
+        {
+            return Ok(Err(format!(
+                "missing permission `{}`",
+                permissions::WORLD_READ_SAVED
+            )));
+        }
+        world_from_state(state, world).map(Ok)
+    })
+}
+
+fn to_wit_saved_section(section: &BlockPalette) -> WitSavedChunkSection {
+    if let PalettedContainer::Homogeneous(state) = section {
+        return WitSavedChunkSection {
+            palette: vec![state.as_u16()],
+            indices: Vec::new(),
+        };
+    }
+    let mut palette = Vec::new();
+    let mut lookup = std::collections::HashMap::new();
+    let indices = section
+        .iter()
+        .map(|state| {
+            *lookup.entry(state.as_u16()).or_insert_with_key(|&id| {
+                palette.push(id);
+                (palette.len() - 1) as u16
+            })
+        })
+        .collect();
+    WitSavedChunkSection { palette, indices }
+}
+
+fn to_wit_saved_chunk(chunk: &pumpkin_world::chunk::ChunkData) -> WitSavedChunk {
+    let sections = chunk
+        .section
+        .block_sections
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    WitSavedChunk {
+        x: chunk.x,
+        z: chunk.z,
+        min_y: chunk.section.min_y,
+        sections: sections.iter().map(to_wit_saved_section).collect(),
+    }
 }
 
 async fn set_block_state_with_store(
@@ -1322,6 +1381,41 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
         let world = accessor.with(|mut host| world_from_state(host.get(), &world))?;
         in_active_context(accessor, world.save()).await?;
         Ok(Ok(()))
+    }
+
+    async fn list_saved_regions(
+        accessor: &Accessor<PluginHostState, Self>,
+        world: Resource<World>,
+    ) -> wasmtime::Result<Result<Vec<(i32, i32)>, String>> {
+        let world = match saved_world_access(accessor, &world)? {
+            Ok(world) => world,
+            Err(err) => return Ok(Err(err)),
+        };
+        Ok(world
+            .level
+            .saved_regions()
+            .await
+            .map(|regions| regions.into_iter().map(|r| (r.x, r.y)).collect())
+            .map_err(|err| err.to_string()))
+    }
+
+    async fn read_saved_chunk(
+        accessor: &Accessor<PluginHostState, Self>,
+        world: Resource<World>,
+        x: i32,
+        z: i32,
+    ) -> wasmtime::Result<Result<Option<WitSavedChunk>, String>> {
+        let world = match saved_world_access(accessor, &world)? {
+            Ok(world) => world,
+            Err(err) => return Ok(Err(err)),
+        };
+        let pos = pumpkin_util::math::vector2::Vector2::new(x, z);
+        Ok(world
+            .level
+            .read_saved_chunk(pos)
+            .await
+            .map(|chunk| chunk.map(|chunk| to_wit_saved_chunk(&chunk)))
+            .map_err(|err| err.to_string()))
     }
 
     async fn set_block(

@@ -906,6 +906,29 @@ impl Level {
         }
     }
 
+    /// Lists the regions that have a saved region file.
+    pub async fn saved_regions(&self) -> std::io::Result<Vec<Vector2<i32>>> {
+        self.chunk_saver
+            .saved_regions(self.level_folder.region_folder.clone())
+            .await
+    }
+
+    /// Reads a chunk as it was last saved, without adding it to the loaded chunks.
+    pub async fn read_saved_chunk(
+        &self,
+        pos: Vector2<i32>,
+    ) -> Result<Option<SyncChunk>, ChunkReadingError> {
+        let (tx, mut rx) = mpsc::channel(1);
+        self.chunk_saver
+            .fetch_chunks(&self.level_folder, &[pos], tx)
+            .await;
+        match rx.recv().await {
+            Some(LoadedData::Loaded(chunk)) => Ok(Some(chunk)),
+            Some(LoadedData::Missing(_)) | None => Ok(None),
+            Some(LoadedData::Error((_, err))) => Err(err),
+        }
+    }
+
     pub fn is_chunk_loaded(&self, coordinates: &Vector2<i32>) -> bool {
         self.loaded_chunks.contains_key(coordinates)
     }
