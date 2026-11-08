@@ -2,7 +2,9 @@ use crate::wit::pumpkin::plugin::event::{ChunkSaveEventData, Event, EventType};
 
 use super::super::FromIntoEvent;
 
-/// An event that occurs when a chunk is saved in a world.
+/// An event that occurs after a chunk has been saved in a world.
+///
+/// Cancelling it has no effect: the chunk is already written.
 pub struct ChunkSaveEvent;
 
 impl FromIntoEvent for ChunkSaveEvent {

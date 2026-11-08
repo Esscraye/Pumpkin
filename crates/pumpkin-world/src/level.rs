@@ -80,6 +80,8 @@ pub struct Level {
     // from the loaded chunks map and sent to the underlying ChunkIO
     pub loaded_chunks: Arc<DashMap<Vector2<i32>, SyncChunk>>,
     pub(crate) loaded_chunk_changes: Arc<SegQueue<LoadedChunkChange>>,
+    /// Chunks written by `write_chunks`, drained by the server to notify plugins.
+    saved_chunks: SegQueue<SyncChunk>,
     loaded_entity_chunks: Arc<DashMap<Vector2<i32>, SyncEntityChunk>>,
     pub chunks_with_scheduled_ticks: Arc<dashmap::DashSet<Vector2<i32>>>,
     pub chunk_loading: Mutex<ChunkLoading>,
@@ -304,6 +306,7 @@ impl Level {
             schedule_tick_counts: AtomicU64::new(0),
             loaded_chunks: Arc::new(DashMap::new()),
             loaded_chunk_changes: Arc::new(SegQueue::new()),
+            saved_chunks: SegQueue::new(),
             loaded_entity_chunks: Arc::new(DashMap::new()),
             chunks_with_scheduled_ticks: Arc::new(dashmap::DashSet::new()),
             chunk_loading: Mutex::new(ChunkLoading::new(level_channel.clone())),
@@ -880,13 +883,29 @@ impl Level {
         let chunk_saver = self.chunk_saver.clone();
         let level_folder = self.level_folder.clone();
 
+        // Only dirty chunks get written; `save_chunks` clears the flag.
+        let saved: Vec<SyncChunk> = chunks_to_write
+            .iter()
+            .filter(|(_, chunk)| chunk.is_dirty())
+            .map(|(_, chunk)| chunk.clone())
+            .collect();
+
         trace!("Sending chunks to ChunkIO {:}", chunks_to_write.len());
         if let Err(error) = chunk_saver
             .save_chunks(&level_folder, chunks_to_write)
             .await
         {
             error!("Failed writing Chunk to disk {error}");
+            return;
         }
+        for chunk in saved {
+            self.saved_chunks.push(chunk);
+        }
+    }
+
+    /// Drains the chunks saved since the last call.
+    pub fn saved_chunks(&self) -> impl Iterator<Item = SyncChunk> + '_ {
+        std::iter::from_fn(|| self.saved_chunks.pop())
     }
 
     pub async fn write_entity_chunks(&self, chunks_to_write: Vec<(Vector2<i32>, SyncEntityChunk)>) {

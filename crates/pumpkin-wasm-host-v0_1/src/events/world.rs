@@ -108,14 +108,10 @@ impl ToFromWasmEvent for ChunkSave {
             .add(self.world.clone())
             .expect("failed to add world resource");
 
-        let (chunk_x, chunk_z) = self
-            .chunk
-            .try_read()
-            .map_or((0, 0), |guard| (guard.x, guard.z));
         Event::ChunkSaveEvent(ChunkSaveEventData {
             target_world,
-            chunk_x,
-            chunk_z,
+            chunk_x: self.chunk.x,
+            chunk_z: self.chunk.z,
             cancelled: self.cancelled,
         })
     }
@@ -146,11 +142,19 @@ impl ToFromWasmEvent for ChunkSave {
                 };
                 Self {
                     world,
-                    chunk: Arc::new(tokio::sync::RwLock::new(chunk_data)),
+                    chunk: Arc::new(chunk_data),
                     cancelled: data.cancelled,
                 }
             }
             _ => panic!("unexpected event type"),
+        }
+    }
+
+    // Keep the saved chunk for later handlers instead of the placeholder from `from_wasm_event`.
+    fn apply_wasm_event(&mut self, event: Event, state: &mut PluginHostState) {
+        cleanup_event(&event, state);
+        if let Event::ChunkSaveEvent(data) = event {
+            self.cancelled = data.cancelled;
         }
     }
 }

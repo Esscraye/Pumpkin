@@ -2,17 +2,27 @@ use crate::world::World;
 use pumpkin_macros::{Event, cancellable};
 use pumpkin_world::chunk::ChunkData;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
-/// An event that occurs when a chunk is saved in a world.
+/// An event that occurs after a chunk has been saved in a world.
 ///
-/// This event contains information about the world and the chunk being saved.
+/// It fires once the chunk was handed to the region storage, so cancelling it has no effect:
+/// skipping the write of an unloading chunk would lose its changes.
 #[cancellable]
 #[derive(Event, Clone)]
 pub struct ChunkSave {
-    /// The world in which the chunk is being saved.
+    /// The world in which the chunk was saved.
     pub world: Arc<World>,
 
-    /// The chunk data being saved, wrapped in a read-write lock for safe concurrent access.
-    pub chunk: Arc<RwLock<ChunkData>>,
+    /// The chunk data that was saved.
+    pub chunk: Arc<ChunkData>,
+}
+
+impl ChunkSave {
+    pub const fn new(world: Arc<World>, chunk: Arc<ChunkData>) -> Self {
+        Self {
+            world,
+            chunk,
+            cancelled: false,
+        }
+    }
 }

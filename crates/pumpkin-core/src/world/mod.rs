@@ -1585,6 +1585,7 @@ impl World {
         self.flush_block_updates();
         self.flush_synced_block_events();
         self.update_active_chunks();
+        self.fire_chunk_save_events(server);
         self.process_poi_chunks();
         self.tick_environment();
         let mut raids = {
@@ -7469,6 +7470,30 @@ impl World {
         if let Some(server) = self.server.upgrade() {
             server.plugin_manager.fire(&server, &mut save_event).await;
         }
+    }
+
+    /// Fires `ChunkSave` for the chunks the level wrote since the last tick.
+    fn fire_chunk_save_events(self: &Arc<Self>, server: &Arc<Server>) {
+        let saved: Vec<_> = self.level.saved_chunks().collect();
+        if saved.is_empty()
+            || !server
+                .plugin_manager
+                .has_handlers::<crate::plugin::world::chunk_save::ChunkSave>()
+        {
+            return;
+        }
+        let world = self.clone();
+        let server_clone = server.clone();
+        server.spawn_task(async move {
+            for chunk in saved {
+                let mut event =
+                    crate::plugin::world::chunk_save::ChunkSave::new(world.clone(), chunk);
+                server_clone
+                    .plugin_manager
+                    .fire(&server_clone, &mut event)
+                    .await;
+            }
+        });
     }
 
     pub fn set_custom_data(&self, namespace: &str, key: &str, value: pumpkin_nbt::tag::NbtTag) {
